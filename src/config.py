@@ -3,7 +3,7 @@ import os
 import numpy as np
 from src.interaction.GameInteraction import GameInteraction
 
-version = "v0.2.0"
+version = "v0.2.1"
 
 
 # 不需要修改version, Github Action打包会自动修改
