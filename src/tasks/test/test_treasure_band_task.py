@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from ok import Box
 
-from src.core.BaseGameTask import BaseGameTask
+from src.core.base_game_task import BaseGameTask
 from src.icons import Icons
 from src.image.treasure_band_detector import (
     DEFAULT_BAND_THRESHOLDS,
@@ -78,12 +78,10 @@ class TestTreasureBandTask(BaseGameTask):
         roi = self.box_of_screen(ROI_X, ROI_Y, ROI_TO_X, ROI_TO_Y, name="treasure_roi")
         self.log_info(f"颜色带 ROI: x={roi.x} y={roi.y} w={roi.width} h={roi.height}")
 
-        deadline = self.active_time() + duration
         last_signature = None
         saved = False
 
-        while self.active_time() < deadline:
-            frame = self.next_frame()
+        for frame in self.loop(duration, raise_if_time_out=False):
             if frame is None:
                 self.sleep(interval)
                 continue

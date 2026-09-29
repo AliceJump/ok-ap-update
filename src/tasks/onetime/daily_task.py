@@ -1,6 +1,6 @@
-"""一键日常任务示例。
+"""一键日常任务。
 
-展示如何使用迁移的 DailyTaskRunner、daily_summary 和 AccountMixin
+使用迁移的 DailyTaskRunner、daily_summary 和 AccountMixin
 来构建一个支持多账户的日常任务。
 
 职责：
@@ -13,17 +13,22 @@
 import tempfile
 from pathlib import Path
 
-from src.core.BaseGameTask import BaseGameTask
+from src.core.base_game_task import BaseGameTask
 from src.icons import Icons
 from src.tasks.daily.account_mixin import AccountMixin
+from src.tasks.daily.daily_feature import DailyFeature
 from src.tasks.daily.daily_summary import create_task_summary_report, open_local_path_with_default_app
 from src.tasks.daily.daily_task_runner import DailyTaskRunner
+from src.tasks.onetime.claim_daily_task import ClaimDailyTask
+from src.tasks.onetime.commission_daily_task import CommissionDailyTask
+from src.tasks.onetime.home_daily_task import HomeDailyTask
 
 
 class DailyTask(AccountMixin, BaseGameTask):
-    """一键日常任务：展示多账户、任务编排与汇总报告的完整用法。
+    """一键日常任务：多账户 + 任务清单 + 汇总报告。
 
     继承顺序：AccountMixin 在前，确保多账户能力注入。
+    子任务（如家园每日）经 DailyFeature 组合接入，不继承业务逻辑。
     """
 
     # 允许「多账户独立配置」按账号覆盖本任务的参数
@@ -40,7 +45,7 @@ class DailyTask(AccountMixin, BaseGameTask):
         super().__init__(*args, **kwargs)
         self.name = "一键日常"
         self.icon = Icons.Task
-        self.description = "日常任务编排示例：多账户 + 任务清单 + 汇总报告"
+        self.description = "日常任务编排：多账户 + 任务清单 + 汇总报告"
         self.support_schedule_task = True
         self.daily_runner = None  # DailyTaskRunner 实例
 
@@ -48,20 +53,26 @@ class DailyTask(AccountMixin, BaseGameTask):
         self._init_account_config()
         # 初始化本任务的默认配置
         self._init_default_config()
+        # 家园每日子任务：复用独立任务的执行逻辑，经包装器接入
+        self.home_daily = DailyFeature(self, HomeDailyTask, switch_key="家园每日")
+        # 每日收菜子任务：邮件、惊喜盒子、日常/周常活跃、大月卡
+        self.claim_daily = DailyFeature(self, ClaimDailyTask, switch_key="每日收菜")
+        # 委托每日子任务：消耗体力刷选定的每日委托
+        self.commission_daily = DailyFeature(self, CommissionDailyTask, switch_key="委托每日")
 
     def _init_default_config(self):
         """注册日常任务的配置项。"""
         self.default_config.update({
-            "收邮件": True,
-            "领奖励": True,
-            "刷副本": False,
+            "家园每日": True,
+            "委托每日": False,
+            "每日收菜": False,
             "生成汇总文件": True,
             "自动打开汇总文件": False,
         })
         self.config_description.update({
-            "收邮件": "自动收取游戏内邮件奖励",
-            "领奖励": "自动领取日常奖励",
-            "刷副本": "自动刷取指定副本",
+            "家园每日": "执行家园每日：收菜、做饭、喂饭",
+            "委托每日": "执行委托每日：消耗体力刷选定的每日委托（需先解锁自动战斗）",
+            "每日收菜": "执行每日收菜：邮件、惊喜盒子、日常/周常活跃、大月卡",
             "生成汇总文件": (
                 "任务结束后把执行情况写成 txt 汇总\n"
                 "目录：系统临时目录/ok-ap/一键日常/"
@@ -76,28 +87,14 @@ class DailyTask(AccountMixin, BaseGameTask):
 
         元素为 (任务名, 执行函数)，任务名同时是配置开关的键名。
         需要自定义开关判定时追加第三个元素「开关谓词」。
-
-        顺序与开关语义与改造前的 run() 完全一致。
         """
         return [
-            # 内置项，不做开关判定，恒执行
-            ("收邮件", self.collect_mail),
+            self.home_daily.plan_item(),
+            # 委托每日在前：战斗会推进日常/周常活跃与大月卡任务进度
+            self.commission_daily.plan_item(),
+            # 每日收菜殿后：把委托战斗产生的活跃度、任务进度一并领走
+            self.claim_daily.plan_item(),
         ]
-
-    # ── 各任务项的具体实现（示例） ────────────────────────
-
-    def collect_mail(self):
-        """收邮件（示例实现）。"""
-        self.log_info("开始收取邮件...", notify=True)
-        # 实际实现中，这里会有 OCR/特征匹配/点击逻辑
-        # 示例：等待并点击邮件入口
-        # result = self.wait_ocr(match="邮件", time_out=10, raise_if_not_found=False)
-        # if result:
-        #     self.click_box(result)
-        #     self.wait_click_ocr(match="一键领取", time_out=5)
-        self.sleep(1)
-        self.log_info("邮件收取完成", notify=True)
-        return True
 
     # ── 主执行入口 ────────────────────────────────────────
 
@@ -131,4 +128,3 @@ class DailyTask(AccountMixin, BaseGameTask):
         except Exception as e:
             self.log_info(f"创建日常任务汇总文件失败: {e}", notify=True)
             return False
-
